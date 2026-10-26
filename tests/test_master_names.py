@@ -48,19 +48,9 @@ def test_only_v2_name_survives_no_account_text_fallback(minimal_capture, encode_
         {},
         "字" * 65,
         "😀" * 65,
-        "bad\nname",
-        "bad\rname",
-        "bad\tname",
         "bad\x00name",
         "bad\x7fname",
-        "bad\u0085name",
-        "bad\u202ename",
-        "bad\u2066name",
-        "bad\u200bname",
-        "bad\u2028name",
-        "bad\u2029name",
         "bad\ud800name",
-        "bad\ue000name",
     ],
 )
 def test_invalid_input_rejected_without_echo(minimal_capture, encode_capture, hmac_key, name):
@@ -85,7 +75,7 @@ def test_html_treats_nickname_as_escaped_text(
     report = build_report(snapshot, None, generated_at=snapshot.captured_at)
     data = report.model_dump(mode="json")
     for output in (base_blocks.profile(data), builder.build(data, asset_dir=tmp_path)):
-        assert "<h2>" + html.escape(name, quote=True) in output
+        assert '<bdi class="master-name" dir="auto">' + html.escape(name, quote=True) in output
         assert name not in output
         assert '<div class="avatar">M</div>' in output
         assert "<h2>御主 · " not in output
@@ -94,7 +84,48 @@ def test_html_treats_nickname_as_escaped_text(
 def test_direct_report_rechecks_nickname(minimal_capture, encode_capture, hmac_key):
     root = named_capture(minimal_capture, "演示昵称")
     snapshot = parse_capture(encode_capture(root), hmac_key, report_fields=True)
-    game = {**snapshot.tables["userGame"][0], "name": "bad\nname"}
+    game = {**snapshot.tables["userGame"][0], "name": "bad\x00name"}
     invalid = replace(snapshot, tables={**snapshot.tables, "userGame": (game,)})
     with pytest.raises(CaptureError, match="^REPORT_DATA_INVALID$"):
         build_report(invalid, None, generated_at=snapshot.captured_at)
+
+
+@pytest.mark.parametrize("region,friend_code", [("CN", "000000000001"), ("JP", "000000001")])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "御主\n第二行",
+        "御主\r\n第二行",
+        "御主\r第二行",
+        "御主\t名字",
+        "御主\x85第二行",
+        "御主\u2028第二行",
+        "御主\u2029第二行",
+        "家人👨\u200d👩\u200d👧\u200d👦",
+        "彩虹🏳️\u200d🌈",
+        "字符\u200b\u200c\u2060\ufeff",
+        "方向\u202e字符\u202c",
+        "方向\u2066字符\u2069",
+        "字\ue000符号",
+        "新符号\U0001faea",
+        "旗🏴\U000e0067\U000e0062\U000e007f",
+    ],
+)
+def test_multiline_and_unicode_symbols_survive_report_round_trip(
+    minimal_capture, encode_capture, hmac_key, region, friend_code, name
+):
+    root = named_capture(minimal_capture, name)
+    root["cache"]["replaced"]["userGame"][0]["friendCode"] = friend_code
+    snapshot = parse_capture(encode_capture(root), hmac_key, report_fields=True, allow_jp=True)
+    assert snapshot.region == region
+    assert snapshot.tables["userGame"][0]["name"] == name
+    assert validate_master_name(name) == name
+    report = build_report(snapshot, None, generated_at=snapshot.captured_at)
+    assert report.account.value.master_name == name
+    restored = type(report).model_validate_json(report.model_dump_json())
+    assert restored.account.value.master_name == name
+    output = base_blocks.profile(report.model_dump(mode="json"))
+    assert (
+        '<bdi class="master-name" dir="auto">' + html.escape(name, quote=True) + "</bdi>" in output
+    )
+    assert name not in repr(snapshot) and name not in repr(report.account.value)

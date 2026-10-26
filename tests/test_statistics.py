@@ -173,3 +173,44 @@ def test_field_error_codes_are_fixed_bounded_and_do_not_contain_values():
     assert FIELD_ERROR_REASONS and all(len(code) <= 64 for code in FIELD_ERROR_REASONS)
     assert "STAT_FIELD_USERSVT_LV" in FIELD_ERROR_REASONS
     assert not any("synthetic" in value for value in FIELD_ERROR_REASONS.values())
+
+
+@pytest.mark.parametrize("friend_code", ["000000000001", "000000001"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "御主\n第二行",
+        "御主\r\n第二行",
+        "御主\r第二行",
+        "御主\t名字",
+        "御主\x85第二行",
+        "御主\u2028第二行",
+        "御主\u2029第二行",
+        "家人👨\u200d👩\u200d👧\u200d👦",
+        "彩虹🏳️\u200d🌈",
+        "字符\u200b\u200c\u2060\ufeff",
+        "方向\u202e字符\u202c",
+        "方向\u2066字符\u2069",
+        "字\ue000符号",
+        "新符号\U0001faea",
+        "旗🏴\U000e0067\U000e0062\U000e007f",
+    ],
+)
+def test_export_reimport_preserves_nickname_text_and_removes_secrets(sample, friend_code, name):
+    game = sample["cache"]["replaced"]["userGame"][0]
+    game.update(name=name, friendCode=friend_code)
+    body, preview = export_statistics(sample, allow_jp=True)
+    assert preview["name"] == name
+    assert decode_response(body)["cache"]["replaced"]["userGame"][0]["name"] == name
+    again, _ = export_statistics(decode_response(body), allow_jp=True)
+    assert again == body
+    assert b"synthetic-" not in body
+
+
+@pytest.mark.parametrize("name", ["bad\x00name", "bad\x1bname", "bad\ud800name", "字" * 65, 5])
+def test_invalid_nickname_has_stable_field_error_without_value(sample, name):
+    sample["cache"]["replaced"]["userGame"][0]["name"] = name
+    with pytest.raises(ExportError) as caught:
+        export_statistics(sample)
+    assert caught.value.code == "STAT_FIELD_USERGAME_NAME"
+    assert "bad" not in str(caught.value)

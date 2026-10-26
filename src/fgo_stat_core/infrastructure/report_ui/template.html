@@ -57,6 +57,8 @@ body{background:#e4f3f7}.canvas{padding:38px 26px 41px}.sheet{border:7px solid #
 /* 网页导出与服务端共用排版，固定标签不因小数宽度取整而换行。 */
 .identity{min-width:0}
 .identity h2{line-height:1.4;overflow-wrap:anywhere}
+/* 保留昵称换行，方向控制仅作用于昵称本身。 */
+.identity .master-name{white-space:pre-wrap;overflow-wrap:anywhere;unicode-bidi:isolate}
 .identity .region{white-space:nowrap}
 .profile-stats{grid-template-columns:136px 1px 132px 1px 132px 1px 132px;gap:12px;align-items:start;min-width:0}
 .profile-stats .label{line-height:22px;white-space:nowrap;margin-bottom:3px}

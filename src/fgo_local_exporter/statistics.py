@@ -127,6 +127,14 @@ def _field_failure(table, field):
 
 
 def _checked_field(table, field, value, *, number=False):
+    if not number and table == "userGame" and field == "name":
+        # 御主昵称与报告共用校验，编队名仍保留原有限制。
+        from fgo_stat_core.contracts.master_name import validate_master_name
+
+        try:
+            return validate_master_name(value)
+        except ValueError:
+            raise _field_failure(table, field) from None
     try:
         return _number(value) if number else _safe_field(field, value)
     except ExportError as error:
